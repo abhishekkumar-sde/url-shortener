@@ -11,7 +11,7 @@ type URL struct {
 
 type CreateURLRequest struct {
 	URL       string `json:"url"`
-	ExpiresAt int64  `json:"expires_at,omitempty"`
+	ExpiresIn int64  `json:"expires_in,omitempty"`
 }
 
 type CreateURLResponse struct {

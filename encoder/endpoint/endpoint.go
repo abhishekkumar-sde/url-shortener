@@ -33,7 +33,7 @@ func (e *URLEndpoint) Create(ctx context.Context, clientIP string, req model.Cre
 		return model.CreateURLResponse{}, svcerror.ErrRateLimited
 	}
 
-	return e.encoderBL.Create(ctx, req.URL, req.ExpiresAt)
+	return e.encoderBL.Create(ctx, req.URL, req.ExpiresIn)
 }
 
 func (e *URLEndpoint) Resolve(ctx context.Context, clientIP, code string) (string, error) {
