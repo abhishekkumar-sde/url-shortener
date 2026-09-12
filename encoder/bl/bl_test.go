@@ -21,6 +21,19 @@ func (f *fakeRepo) Get(_ context.Context, code string) (model.URL, error) {
 	return f.urls[code], nil
 }
 
+func (f *fakeRepo) GetByLongURL(
+	_ context.Context,
+	longURL string,
+) (model.URL, error) {
+	for _, u := range f.urls {
+		if u.LongURL == longURL {
+			return u, nil
+		}
+	}
+
+	return model.URL{}, svcerror.ErrNotFound
+}
+
 type fakeCache struct {
 	values map[string]string
 }

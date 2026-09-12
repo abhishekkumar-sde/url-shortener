@@ -67,3 +67,33 @@ func (r *URLRepository) Get(ctx context.Context, code string) (model.URL, error)
 
 	return u, nil
 }
+
+func (r *URLRepository) GetByLongURL(ctx context.Context, longURL string) (model.URL, error) {
+	result, err := r.client.Query(ctx, &sdkdynamodb.QueryInput{
+		TableName:              aws.String(r.table),
+		IndexName:              aws.String("long_url-index"),
+		KeyConditionExpression: aws.String("long_url = :long_url"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":long_url": &types.AttributeValueMemberS{
+				Value: longURL,
+			},
+		},
+		Limit: aws.Int32(1),
+	})
+
+	if err != nil {
+		return model.URL{}, fmt.Errorf("get URL by long URL: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return model.URL{}, svcerror.ErrNotFound
+	}
+
+	var u model.URL
+
+	if err := attributevalue.UnmarshalMap(result.Items[0], &u); err != nil {
+		return model.URL{}, fmt.Errorf("unmarshal URL: %w", err)
+	}
+
+	return u, nil
+}

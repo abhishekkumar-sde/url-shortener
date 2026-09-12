@@ -17,6 +17,7 @@ import (
 type URLRepository interface {
 	Create(context.Context, model.URL) error
 	Get(context.Context, string) (model.URL, error)
+	GetByLongURL(context.Context, string) (model.URL, error)
 }
 
 type URLCache interface {
@@ -44,6 +45,16 @@ func (s *BL) Create(ctx context.Context, rawURL string) (model.CreateURLResponse
 		return model.CreateURLResponse{}, svcerror.ErrInvalidURL
 	}
 
+	// Check whether this URL already exists.
+	existing, err := s.repository.GetByLongURL(ctx, rawURL)
+	if err == nil {
+		return model.CreateURLResponse{
+			Code:     existing.Code,
+			ShortURL: s.baseURL + "/" + existing.Code,
+		}, nil
+	}
+
+	// Create a new short URL
 	for i := 0; i < 10; i++ {
 		code := base62(s.counter.Add(1))
 
