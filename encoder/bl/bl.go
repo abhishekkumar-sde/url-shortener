@@ -17,7 +17,6 @@ import (
 type URLRepository interface {
 	Create(context.Context, model.URL) error
 	Get(context.Context, string) (model.URL, error)
-	GetByLongURL(context.Context, string) (model.URL, error)
 }
 
 type URLCache interface {
@@ -43,15 +42,6 @@ func NewEncoderBL(repository URLRepository, cache URLCache, baseURL string) *BL 
 func (s *BL) Create(ctx context.Context, rawURL string) (model.CreateURLResponse, error) {
 	if !isValidURL(rawURL) {
 		return model.CreateURLResponse{}, svcerror.ErrInvalidURL
-	}
-
-	// Check whether this URL already exists.
-	existing, err := s.repository.GetByLongURL(ctx, rawURL)
-	if err == nil {
-		return model.CreateURLResponse{
-			Code:     existing.Code,
-			ShortURL: s.baseURL + "/" + existing.Code,
-		}, nil
 	}
 
 	// Create a new short URL

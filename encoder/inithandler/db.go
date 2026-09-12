@@ -64,9 +64,7 @@ func (c *Client) EnsureTable(ctx context.Context) error {
 	}
 
 	// If DescribeTable failed, the table probably doesn't exist.
-	// Create it with:
-	// Primary Key: code
-	// GSI: long_url-index -> long_url
+	// Create it.
 	_, err := c.Client.CreateTable(
 		ctx,
 		&sdkdynamodb.CreateTableInput{
@@ -77,36 +75,12 @@ func (c *Client) EnsureTable(ctx context.Context) error {
 					AttributeName: aws.String("code"),
 					AttributeType: types.ScalarAttributeTypeS,
 				},
-				{
-					AttributeName: aws.String("long_url"),
-					AttributeType: types.ScalarAttributeTypeS,
-				},
 			},
 
-			// Primary key
 			KeySchema: []types.KeySchemaElement{
 				{
 					AttributeName: aws.String("code"),
 					KeyType:       types.KeyTypeHash,
-				},
-			},
-
-			// Global Secondary Index for finding
-			// an existing short URL by long URL.
-			GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
-				{
-					IndexName: aws.String("long_url-index"),
-
-					KeySchema: []types.KeySchemaElement{
-						{
-							AttributeName: aws.String("long_url"),
-							KeyType:       types.KeyTypeHash,
-						},
-					},
-
-					Projection: &types.Projection{
-						ProjectionType: types.ProjectionTypeAll,
-					},
 				},
 			},
 
