@@ -20,12 +20,13 @@ func NewHandler(endpoint *endpoint.URLEndpoint) *Handler {
 	return &Handler{endpoint: endpoint}
 }
 
-func (h *Handler) Health(w nethttp.ResponseWriter, r *nethttp.Request) {
+func (h *Handler) Ping(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if r.Method != nethttp.MethodGet {
 		writeError(w, nethttp.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, nethttp.StatusOK, map[string]string{"status": "ok"})
+
+	writeJSON(w, nethttp.StatusOK, map[string]string{"message": "pong"})
 }
 
 func (h *Handler) CreateURL(w nethttp.ResponseWriter, r *nethttp.Request) {

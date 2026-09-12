@@ -11,7 +11,7 @@ func NewRouter(endpoint *endpoint.URLEndpoint) http.Handler {
 
 	h := NewHandler(endpoint)
 
-	mux.HandleFunc("/health", h.Health)
+	mux.HandleFunc("/ping", h.Ping)
 	mux.HandleFunc("/api/v1/urls", h.CreateURL)
 	mux.HandleFunc("/", h.ResolveURL)
 

@@ -1,0 +1,142 @@
+{
+  "info": {
+    "_postman_id": "8d1e5b9d-8d35-4f70-9e8a-4b7f8d7f2f01",
+    "name": "URL Shortener",
+    "description": "Postman collection for the Go URL Shortener service.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:10002"
+    },
+    {
+      "key": "shortCode",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Ping",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/ping",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ping"
+          ]
+        },
+        "description": "Server connectivity check. Expected response: {\"message\":\"pong\"}."
+      },
+      "response": []
+    },
+    {
+      "name": "Create Short URL",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://www.google.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/urls",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "urls"
+          ]
+        },
+        "description": "Creates a short URL. Copy the returned code into the collection variable shortCode."
+      },
+      "response": []
+    },
+    {
+      "name": "Resolve Short URL",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/{{shortCode}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "{{shortCode}}"
+          ]
+        },
+        "description": "Resolves the short code. The server responds with HTTP 302 and a Location header."
+      },
+      "response": []
+    },
+    {
+      "name": "Create - Invalid URL",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"not-a-url\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/urls",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "urls"
+          ]
+        },
+        "description": "Expected response: HTTP 400 with {\"error\":\"invalid URL\"}."
+      },
+      "response": []
+    },
+    {
+      "name": "Resolve - Not Found",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/this-code-does-not-exist",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "this-code-does-not-exist"
+          ]
+        },
+        "description": "Expected response: HTTP 404 with {\"error\":\"short URL not found\"}."
+      },
+      "response": []
+    }
+  ]
+}
