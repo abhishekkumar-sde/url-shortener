@@ -46,7 +46,7 @@ func TestCreateAndResolve(t *testing.T) {
 	repo := &fakeRepo{urls: map[string]model.URL{}}
 	cache := &fakeCache{values: map[string]string{}}
 
-	service := NewURLService(repo, cache, "http://localhost:8080")
+	service := NewEncoderBL(repo, cache, "http://localhost:8080")
 
 	created, err := service.Create(context.Background(), "https://example.com")
 	if err != nil {
@@ -68,7 +68,7 @@ func TestCreateAndResolve(t *testing.T) {
 }
 
 func TestRejectInvalidURL(t *testing.T) {
-	service := NewURLService(
+	service := NewEncoderBL(
 		&fakeRepo{urls: map[string]model.URL{}},
 		&fakeCache{values: map[string]string{}},
 		"http://localhost:8080",

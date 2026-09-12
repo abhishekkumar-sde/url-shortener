@@ -14,12 +14,12 @@ type RateLimiter interface {
 }
 
 type URLEndpoint struct {
-	service *bl.URLService
-	limiter RateLimiter
+	encoderBL *bl.BL
+	limiter   RateLimiter
 }
 
-func NewURLEndpoint(service *bl.URLService, limiter RateLimiter) *URLEndpoint {
-	return &URLEndpoint{service: service, limiter: limiter}
+func NewURLEndpoint(encoderBL *bl.BL, limiter RateLimiter) *URLEndpoint {
+	return &URLEndpoint{encoderBL: encoderBL, limiter: limiter}
 }
 
 func (e *URLEndpoint) Create(ctx context.Context, clientIP string, req model.CreateURLRequest) (model.CreateURLResponse, error) {
@@ -31,7 +31,7 @@ func (e *URLEndpoint) Create(ctx context.Context, clientIP string, req model.Cre
 		return model.CreateURLResponse{}, svcerror.ErrRateLimited
 	}
 
-	return e.service.Create(ctx, req.URL)
+	return e.encoderBL.Create(ctx, req.URL)
 }
 
 func (e *URLEndpoint) Resolve(ctx context.Context, clientIP, code string) (string, error) {
@@ -43,5 +43,5 @@ func (e *URLEndpoint) Resolve(ctx context.Context, clientIP, code string) (strin
 		return "", svcerror.ErrRateLimited
 	}
 
-	return e.service.Resolve(ctx, code)
+	return e.encoderBL.Resolve(ctx, code)
 }
