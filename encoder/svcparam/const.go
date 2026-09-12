@@ -1,0 +1,3 @@
+package svcparam
+
+const Alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
