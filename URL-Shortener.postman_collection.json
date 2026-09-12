@@ -1,17 +1,17 @@
 {
   "info": {
-    "_postman_id": "8d1e5b9d-8d35-4f70-9e8a-4b7f8d7f2f01",
-    "name": "URL Shortener",
-    "description": "Postman collection for the Go URL Shortener service.",
+    "_postman_id": "url-shortener-collection",
+    "name": "URL-Shortener",
+    "description": "Postman collection for the Go URL Shortener API.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
-      "key": "baseUrl",
+      "key": "base_url",
       "value": "http://localhost:10002"
     },
     {
-      "key": "shortCode",
+      "key": "short_code",
       "value": "1"
     }
   ],
@@ -21,18 +21,8 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/ping",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "ping"
-          ]
-        },
-        "description": "Server connectivity check. Expected response: {\"message\":\"pong\"}."
-      },
-      "response": []
+        "url": "{{base_url}}/ping"
+      }
     },
     {
       "name": "Create Short URL",
@@ -46,48 +36,13 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"url\": \"https://www.google.com\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
+          "raw": "{\n  \"url\": \"https://www.google.com\"\n}"
         },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/urls",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "urls"
-          ]
-        },
-        "description": "Creates a short URL. Copy the returned code into the collection variable shortCode."
-      },
-      "response": []
+        "url": "{{base_url}}/api/v1/urls"
+      }
     },
     {
-      "name": "Resolve Short URL",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/{{shortCode}}",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "{{shortCode}}"
-          ]
-        },
-        "description": "Resolves the short code. The server responds with HTTP 302 and a Location header."
-      },
-      "response": []
-    },
-    {
-      "name": "Create - Invalid URL",
+      "name": "Create Short URL with Expiry",
       "request": {
         "method": "POST",
         "header": [
@@ -98,45 +53,43 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"url\": \"not-a-url\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
+          "raw": "{\n  \"url\": \"https://www.linkedin.com/in/abhishekkumar-sde/\",\n  \"expires_in\": 60\n}"
         },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/urls",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "urls"
-          ]
-        },
-        "description": "Expected response: HTTP 400 with {\"error\":\"invalid URL\"}."
-      },
-      "response": []
+        "url": "{{base_url}}/api/v1/urls"
+      }
     },
     {
-      "name": "Resolve - Not Found",
+      "name": "Resolve Short URL",
       "request": {
         "method": "GET",
         "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/this-code-does-not-exist",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "this-code-does-not-exist"
-          ]
+        "url": "{{base_url}}/{{short_code}}"
+      }
+    },
+    {
+      "name": "Invalid URL",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"not-a-url\"\n}"
         },
-        "description": "Expected response: HTTP 404 with {\"error\":\"short URL not found\"}."
-      },
-      "response": []
+        "url": "{{base_url}}/api/v1/urls"
+      }
+    },
+    {
+      "name": "Not Found",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/doesnotexist"
+      }
     }
   ]
 }

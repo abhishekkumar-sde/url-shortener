@@ -1,8 +1,6 @@
 # URL Shortener
 
-A production-style URL shortener built with **Go**, **Redis**, **DynamoDB Local**, and **Docker**.
-
-The project is organized into transport, endpoint, business-logic, data-access, and infrastructure layers.
+A production-oriented URL shortener built with **Go**, **DynamoDB**, **Redis**, and Docker.
 
 ## Architecture
 
@@ -10,158 +8,30 @@ The project is organized into transport, endpoint, business-logic, data-access, 
 Client
   |
   v
-HTTP Transport
+Go HTTP Server
   |
-  v
-Endpoint Layer
+  +---- Rate Limiter (Redis)
   |
-  v
-Business Logic
-  |
-  +--------------------+
-  |                    |
-  v                    v
-DynamoDB Repository   Redis Cache
-                       |
-                       v
-                  Redis Rate Limiter
+  +---- URL Service
+          |
+          +---- Redis Cache
+          |
+          +---- DynamoDB
 ```
 
-### Project Structure
+### Components
 
-```text
-.
-├── buildscripts/
-│   ├── build/
-│   │   └── Dockerfile
-│   ├── dynamodb/
-│   │   └── run_dynamodb.sh
-│   ├── redis/
-│   │   └── run_redis.sh
-│   ├── server/
-│   │   └── run_server.sh
-│   ├── default_env.sh
-│   └── runall.sh
-│
-├── encoder/
-│   ├── bl/                  # Business logic
-│   ├── cmd/restserver/      # Application entry point
-│   ├── dl/                  # Data layer
-│   ├── endpoint/            # Endpoint/use-case layer
-│   ├── inithandler/         # Dependency initialization
-│   ├── model/               # Request/response/domain models
-│   ├── svcerror/            # Service errors
-│   ├── svcparam/            # Service constants/config keys
-│   └── transport/http/      # HTTP handlers, middleware and router
-│
-├── pkg/
-│   ├── ratelimiter/         # Redis-backed rate limiter
-│   └── redis/               # Redis client and cache implementation
-│
-├── go.mod
-├── go.sum
-└── README.md
-```
-
-## Features
-
-- Create a short URL from a long URL.
-- Resolve a short code and redirect to the original URL.
-- Base62 short-code generation.
-- Redis caching for URL lookups.
-- Redis-based request rate limiting.
-- DynamoDB Local persistence.
-- Automatic DynamoDB table initialization.
-- HTTP request logging.
-- Graceful HTTP server shutdown.
-- Dockerized Go service, Redis, and DynamoDB Local.
-- No Docker Compose required; the stack is started with shell scripts.
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| Language | Go 1.24 |
-| HTTP | `net/http` |
-| Router | `http.ServeMux` |
-| Cache | Redis 7 |
-| Rate limiter | Redis |
-| Database | DynamoDB Local |
-| AWS SDK | AWS SDK for Go v2 |
-| Configuration | Viper |
-| Containers | Docker |
-| Short-code encoding | Base62 |
-
-## Prerequisites
-
-Install:
-
-- Go 1.24+
-- Docker
-- curl or Postman
-
-## Running the Project
-
-From the project root:
-
-```bash
-./buildscripts/runall.sh
-```
-
-The script:
-
-1. Creates the Docker network.
-2. Starts Redis.
-3. Starts DynamoDB Local.
-4. Builds the Go Docker image.
-5. Starts the URL shortener server.
-
-If the scripts are not executable:
-
-```bash
-chmod +x buildscripts/runall.sh
-chmod +x buildscripts/redis/run_redis.sh
-chmod +x buildscripts/dynamodb/run_dynamodb.sh
-chmod +x buildscripts/server/run_server.sh
-```
-
-### Container Ports
-
-```text
-Host                  Container
-
-localhost:10000   ->   Redis:6379
-localhost:10001   ->   DynamoDB:8000
-localhost:10002   ->   Go server:8080
-```
-
-Container-to-container communication uses the Docker network and **container ports**, for example:
-
-```text
-urlshortener-redis:6379
-urlshortener-dynamodb:8000
-```
+- **Go** — HTTP API and business logic
+- **DynamoDB** — persistent URL storage
+- **Redis** — URL cache and distributed rate limiting
+- **Docker** — local runtime environment
 
 ## API
 
-Base URL:
-
-```text
-http://localhost:10002
-```
-
 ### 1. Ping
-
-Check that the HTTP server is running.
 
 ```http
 GET /ping
-```
-
-Example:
-
-```bash
-curl http://localhost:10002/ping
 ```
 
 Response:
@@ -172,14 +42,6 @@ Response:
 }
 ```
 
-Status:
-
-```text
-200 OK
-```
-
----
-
 ### 2. Create Short URL
 
 ```http
@@ -187,7 +49,7 @@ POST /api/v1/urls
 Content-Type: application/json
 ```
 
-Request:
+Request without expiry:
 
 ```json
 {
@@ -195,58 +57,37 @@ Request:
 }
 ```
 
-Example:
+Request with expiry:
 
-```bash
-curl -X POST http://localhost:10002/api/v1/urls \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://www.google.com"}'
+```json
+{
+  "url": "https://www.linkedin.com/in/abhishekkumar-sde/",
+  "expires_in": 60
+}
 ```
+
+`expires_in` is the URL lifetime in **seconds**.
+
+Examples:
+
+- `60` = 1 minute
+- `3600` = 1 hour
+- `86400` = 1 day
+- `0` or omitted = no URL expiry
 
 Response:
 
 ```json
 {
   "code": "1",
-  "short_url": "http://localhost:10002/1"
+  "short_url": "http://localhost:10002/1",
+  "expires_at": 1780000000
 }
 ```
 
-The generated code is Base62 encoded.
+For a URL without expiry, `expires_at` is `0`/omitted depending on JSON serialization.
 
-Status:
-
-```text
-201 Created
-```
-
-#### Validation
-
-Only `http` and `https` URLs are accepted.
-
-Example invalid request:
-
-```json
-{
-  "url": "not-a-url"
-}
-```
-
-Response:
-
-```json
-{
-  "error": "invalid URL"
-}
-```
-
-Status:
-
-```text
-400 Bad Request
-```
-
----
+The same long URL can be shortened multiple times. Each request generates a different short code.
 
 ### 3. Resolve Short URL
 
@@ -256,49 +97,118 @@ GET /{code}
 
 Example:
 
-```bash
-curl -i http://localhost:10002/1
+```http
+GET /1
 ```
 
-The service returns an HTTP redirect to the original URL.
+A valid short URL responds with an HTTP **302 redirect** to the original URL.
+
+If the code does not exist or the URL has expired:
+
+```http
+HTTP 404
+```
+
+## Resolve Flow
+
+Redis is the fast path for redirects.
 
 ```text
-302 Found
-Location: https://www.google.com
+GET /{code}
+      |
+      v
+    Redis
+      |
+   +--+--+
+   |     |
+ HIT   MISS
+   |     |
+   v     v
+check  DynamoDB
+expiry    |
+   |      v
+   |   check expiry
+   |      |
+   |      v
+   |   populate Redis
+   |      |
+   +------+
+      |
+      v
+   Redirect
 ```
 
-The URL is first looked up in Redis. On a cache miss, the service reads from DynamoDB and then populates Redis.
-
-### Not Found
-
-```text
-GET /does-not-exist
-```
-
-Response:
+Redis stores both the original URL and its expiry timestamp:
 
 ```json
 {
-  "error": "short URL not found"
+  "long_url": "https://example.com",
+  "expires_at": 1780000000
 }
 ```
 
-Status:
+This allows a cache hit to validate expiry without reading DynamoDB.
+
+DynamoDB remains the source of truth when Redis misses.
+
+## Expiry
+
+Expiry is represented by `expires_at`, a Unix timestamp in seconds.
+
+On URL creation:
 
 ```text
-404 Not Found
+expires_at = current_time + expires_in
 ```
+
+The expiry timestamp is:
+
+- stored in DynamoDB
+- stored in the Redis cache
+- returned in the create response
+
+Redis uses the URL's remaining lifetime as its cache TTL.
+
+DynamoDB TTL is enabled on the `expires_at` attribute. DynamoDB TTL cleanup is asynchronous, so the application still checks `expires_at` before redirecting.
+
+## Storage
+
+DynamoDB table:
+
+```text
+Partition key: code (String)
+TTL attribute: expires_at
+```
+
+Example item:
+
+```json
+{
+  "code": "1",
+  "long_url": "https://example.com",
+  "created_at": "2026-09-13T00:00:00Z",
+  "expires_at": 1780000000
+}
+```
+
+`expires_at` is not part of the key schema; it is only the TTL attribute.
 
 ## Rate Limiting
 
-The endpoint layer applies Redis-based rate limiting by client IP and operation.
+Redis is also used for API rate limiting.
 
-| Operation | Limit | Window |
-|---|---:|---|
-| Create URL | 100 requests | 1 minute |
-| Resolve URL | 300 requests | 1 minute |
+Current limits:
+
+| Endpoint | Limit |
+|---|---:|
+| Create URL | 100 requests/minute/IP |
+| Resolve URL | 300 requests/minute/IP |
 
 When the limit is exceeded:
+
+```http
+HTTP 429
+```
 
 ```json
 {
@@ -306,225 +216,221 @@ When the limit is exceeded:
 }
 ```
 
-Status:
+## Error Responses
 
-```text
-429 Too Many Requests
+### Invalid URL
+
+```http
+HTTP 400
 ```
 
-## Redis Cache
-
-Redis stores URL mappings using keys in the form:
-
-```text
-url:<code>
+```json
+{
+  "error": "invalid URL"
+}
 ```
 
-For example:
+### URL Not Found / Expired
 
-```text
-url:1 -> https://www.google.com
+```http
+HTTP 404
 ```
 
-The cache TTL is currently:
-
-```text
-24 hours
+```json
+{
+  "error": "url not found"
+}
 ```
 
-## DynamoDB
+### Rate Limited
 
-DynamoDB Local stores URL mappings in:
-
-```text
-URLMappings
+```http
+HTTP 429
 ```
 
-The partition key is:
-
-```text
-code (String)
+```json
+{
+  "error": "rate limit exceeded"
+}
 ```
 
-Stored attributes:
+## Running Locally
 
-```text
-code
-long_url
-created_at
-```
+### Prerequisites
 
-The application automatically checks for the table during startup and creates it if it does not exist.
+- Docker
+- Go
+- Postman (optional)
 
-DynamoDB Local runs with:
-
-```text
--sharedDb
--inMemory
-```
-
-so data is intentionally lost when the DynamoDB Local container is restarted.
-
-## Configuration
-
-Configuration is supplied through environment variables and read using Viper.
-
-Current variables:
-
-```text
-HTTP_PORT
-REDIS_HOST
-REDIS_PORT
-DYNAMODB_HOST
-DYNAMODB_PORT
-DYNAMODB_REGION
-DYNAMODB_TABLE
-BASE_URL
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-```
-
-The Docker scripts configure these automatically.
-
-## Useful Docker Commands
-
-View running containers:
+Create a Docker network:
 
 ```bash
-docker ps
+docker network create urlshortener-network
 ```
 
-View server logs:
+### Start Redis
 
 ```bash
-docker logs -f urlshortener-server
+docker run -d   --name urlshortener-redis   --network urlshortener-network   -p 10000:6379   redis:7-alpine
 ```
 
-View Redis logs:
+### Start DynamoDB Local
 
 ```bash
-docker logs -f urlshortener-redis
+docker run -d   --name urlshortener-dynamodb   --network urlshortener-network   -p 10001:8000   amazon/dynamodb-local
 ```
 
-View DynamoDB logs:
+### Build the Server
+
+From the repository root:
 
 ```bash
-docker logs -f urlshortener-dynamodb
+docker build -f buildscripts/build/Dockerfile -t url-shortener:latest .
 ```
 
-Open a shell in the Alpine-based server container:
+### Run the Server
 
 ```bash
-docker exec -it urlshortener-server sh
+docker run -d   --name urlshortener-server   --network urlshortener-network   -p 10002:8080   -e REDIS_HOST=urlshortener-redis   -e REDIS_PORT=6379   -e DYNAMODB_HOST=urlshortener-dynamodb   -e DYNAMODB_PORT=8000   url-shortener:latest
 ```
 
-Stop the stack:
+The API is available at:
 
-```bash
-docker rm -f urlshortener-server urlshortener-redis urlshortener-dynamodb
+```text
+http://localhost:10002
 ```
 
-Remove the Docker network:
+### Important Docker Networking Note
 
-```bash
-docker network rm urlshortener-network
+From inside the Go container, use container ports:
+
+```text
+Redis      -> urlshortener-redis:6379
+DynamoDB   -> urlshortener-dynamodb:8000
+Server     -> 0.0.0.0:8080
 ```
+
+The host ports `10000`, `10001`, and `10002` are for access from your machine.
 
 ## Testing
 
-Run Go tests:
+Run unit tests:
 
 ```bash
 go test ./...
 ```
 
+Run with the race detector:
+
+```bash
+go test -race ./...
+```
+
 Build locally:
 
 ```bash
-go build ./encoder/cmd/restserver
+go build ./...
 ```
 
-## Postman
-
-A ready-to-import Postman collection is included:
+## Project Structure
 
 ```text
-postman/URL-Shortener.postman_collection.json
+urlshortner/
+├── encoder/
+│   ├── bl/                  # Business logic
+│   ├── cmd/restserver/      # Server entry point
+│   ├── dl/                  # DynamoDB data layer
+│   ├── endpoint/            # Endpoint/business orchestration
+│   ├── inithandler/         # DynamoDB initialization and TTL
+│   ├── model/               # Request/response/domain models
+│   ├── svcerror/            # Service errors
+│   ├── svcparam/            # Service constants/config
+│   └── transport/http/      # HTTP handlers/router
+├── pkg/
+│   ├── ratelimiter/         # Redis-backed rate limiter
+│   └── redis/               # Redis cache
+├── buildscripts/
+│   └── build/               # Docker build configuration
+├── URL-Shortener.postman_collection.json
+├── go.mod
+└── README.md
 ```
-
-It contains:
-
-- Ping
-- Create Short URL
-- Resolve Short URL
-- Invalid URL example
-- Not Found example
 
 ## Design Notes
 
-### Base62
+### Short Code Generation
 
-Short codes use:
+The current implementation uses a process-local atomic counter encoded using Base62.
 
-```text
-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
-```
-
-This gives 62 possible characters per position.
-
-### Cache-Aside Pattern
-
-URL resolution follows:
+Base62 uses:
 
 ```text
-Request
-  |
-  v
-Redis
-  |
-  +-- hit --> return URL
-  |
-  +-- miss
-        |
-        v
-    DynamoDB
-        |
-        v
-    Update Redis
-        |
-        v
-    return URL
+0-9
+A-Z
+a-z
 ```
 
-### Layered Design
+This produces compact short codes.
 
-The application keeps responsibilities separated:
+DynamoDB uses:
 
 ```text
-Transport
-    ↓
-Endpoint
-    ↓
-Business Logic
-    ↓
-Data Interfaces
-    ↓
-Redis / DynamoDB
+attribute_not_exists(code)
 ```
 
-This makes the business logic testable without requiring real Redis or DynamoDB dependencies.
+as a conditional write, preventing an existing code from being overwritten.
 
-## Future Improvements
+For a multi-instance production deployment, a process-local counter is not globally coordinated. A production design could use random Base62 IDs, a distributed ID generator, or a Redis-backed atomic counter depending on the requirements.
 
-Potential production improvements include:
+### Why Redis?
 
-- Distributed/atomic rate limiting with a Lua script.
-- Collision-free ID generation across multiple server instances.
-- Persistent DynamoDB instead of DynamoDB Local.
-- Authentication/authorization for URL creation.
-- Custom aliases.
-- URL expiration.
-- Metrics and tracing.
-- Health/readiness checks.
-- Horizontal scaling behind a load balancer.
-- More comprehensive integration tests.
+Redis serves two purposes:
+
+1. URL cache for fast redirects
+2. Rate limiting
+
+The redirect path is optimized as:
+
+```text
+Redis HIT -> no DynamoDB read
+Redis MISS -> DynamoDB -> Redis
+```
+
+### Why DynamoDB?
+
+DynamoDB provides durable storage for the URL mapping:
+
+```text
+short code -> long URL + metadata
+```
+
+It also supports conditional writes and TTL configuration.
+
+## Postman
+
+Import:
+
+```text
+URL-Shortener.postman_collection.json
+```
+
+The collection contains:
+
+- Ping
+- Create Short URL
+- Create Short URL with Expiry
+- Resolve Short URL
+- Invalid URL
+- Not Found
+
+The collection uses:
+
+```text
+http://localhost:10002
+```
+
+as the local API base URL.
+
+## License
+
+This project is for learning and system-design/interview practice.
