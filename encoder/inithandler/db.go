@@ -52,7 +52,9 @@ func (c *Client) EnsureTable(ctx context.Context) error {
 		)
 
 		if err == nil {
-			return nil
+			// Table already exists.
+			// Make sure TTL is enabled.
+			return c.EnableTTL(ctx)
 		}
 
 		lastErr = err
@@ -100,11 +102,43 @@ func (c *Client) EnsureTable(ctx context.Context) error {
 	// Wait until DynamoDB reports that the table exists.
 	waiter := sdkdynamodb.NewTableExistsWaiter(c.Client)
 
-	return waiter.Wait(
+	if err := waiter.Wait(
 		ctx,
 		&sdkdynamodb.DescribeTableInput{
 			TableName: aws.String(c.Table),
 		},
 		30*time.Second,
+	); err != nil {
+		return fmt.Errorf("wait for table %q: %w", c.Table, err)
+	}
+
+	// Enable TTL after the table has been created and is ACTIVE.
+	if err := c.EnableTTL(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) EnableTTL(ctx context.Context) error {
+	_, err := c.Client.UpdateTimeToLive(
+		ctx,
+		&sdkdynamodb.UpdateTimeToLiveInput{
+			TableName: aws.String(c.Table),
+			TimeToLiveSpecification: &types.TimeToLiveSpecification{
+				AttributeName: aws.String("expires_at"),
+				Enabled:       aws.Bool(true),
+			},
+		},
 	)
+
+	if err != nil {
+		return fmt.Errorf(
+			"enable TTL for table %q: %w",
+			c.Table,
+			err,
+		)
+	}
+
+	return nil
 }

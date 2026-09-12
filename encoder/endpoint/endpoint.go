@@ -24,14 +24,16 @@ func NewURLEndpoint(encoderBL *bl.BL, limiter RateLimiter) *URLEndpoint {
 
 func (e *URLEndpoint) Create(ctx context.Context, clientIP string, req model.CreateURLRequest) (model.CreateURLResponse, error) {
 	allowed, err := e.limiter.Allow(ctx, clientIP, "create", 100, time.Minute)
+
 	if err != nil {
 		return model.CreateURLResponse{}, err
 	}
+
 	if !allowed {
 		return model.CreateURLResponse{}, svcerror.ErrRateLimited
 	}
 
-	return e.encoderBL.Create(ctx, req.URL)
+	return e.encoderBL.Create(ctx, req.URL, req.ExpiresAt)
 }
 
 func (e *URLEndpoint) Resolve(ctx context.Context, clientIP, code string) (string, error) {

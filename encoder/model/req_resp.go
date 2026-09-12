@@ -6,15 +6,18 @@ type URL struct {
 	Code      string    `dynamodbav:"code"`
 	LongURL   string    `dynamodbav:"long_url"`
 	CreatedAt time.Time `dynamodbav:"created_at"`
+	ExpiresAt int64     `dynamodbav:"expires_at"`
 }
 
 type CreateURLRequest struct {
-	URL string `json:"url"`
+	URL       string `json:"url"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
 }
 
 type CreateURLResponse struct {
-	Code     string `json:"code"`
-	ShortURL string `json:"short_url"`
+	Code      string `json:"code"`
+	ShortURL  string `json:"short_url"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
 }
 
 type ErrorResponse struct {

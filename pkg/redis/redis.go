@@ -20,8 +20,11 @@ func (c *Cache) Get(ctx context.Context, code string) (string, error) {
 	return c.client.Get(ctx, key(code)).Result()
 }
 
-func (c *Cache) Set(ctx context.Context, code, longURL string) error {
-	return c.client.Set(ctx, key(code), longURL, c.ttl).Err()
+func (c *Cache) Set(ctx context.Context, code string, longURL string, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = c.ttl
+	}
+	return c.client.Set(ctx, key(code), longURL, ttl).Err()
 }
 
 func key(code string) string {
