@@ -24,22 +24,22 @@ type URLCache interface {
 	Set(context.Context, string, string) error
 }
 
-type URLService struct {
+type BL struct {
 	repository URLRepository
 	cache      URLCache
 	baseURL    string
 	counter    atomic.Uint64
 }
 
-func NewURLService(repository URLRepository, cache URLCache, baseURL string) *URLService {
-	return &URLService{
+func NewEncoderBL(repository URLRepository, cache URLCache, baseURL string) *BL {
+	return &BL{
 		repository: repository,
 		cache:      cache,
 		baseURL:    strings.TrimRight(baseURL, "/"),
 	}
 }
 
-func (s *URLService) Create(ctx context.Context, rawURL string) (model.CreateURLResponse, error) {
+func (s *BL) Create(ctx context.Context, rawURL string) (model.CreateURLResponse, error) {
 	if !isValidURL(rawURL) {
 		return model.CreateURLResponse{}, svcerror.ErrInvalidURL
 	}
@@ -72,7 +72,7 @@ func (s *URLService) Create(ctx context.Context, rawURL string) (model.CreateURL
 	return model.CreateURLResponse{}, fmt.Errorf("unable to generate unique code")
 }
 
-func (s *URLService) Resolve(ctx context.Context, code string) (string, error) {
+func (s *BL) Resolve(ctx context.Context, code string) (string, error) {
 	code = strings.TrimSpace(code)
 	if code == "" || strings.ContainsAny(code, "/?# ") {
 		return "", svcerror.ErrNotFound

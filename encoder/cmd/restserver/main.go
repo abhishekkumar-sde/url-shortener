@@ -53,8 +53,8 @@ func main() {
 	cache := redis.NewCache(redisClient, 24*time.Hour)
 	limiter := ratelimiter.NewRateLimiter(redisClient)
 
-	service := bl.NewURLService(repo, cache, viper.GetString(envvar.BaseURL))
-	endpoint := endpoint.NewURLEndpoint(service, limiter)
+	encoderBL := bl.NewEncoderBL(repo, cache, viper.GetString(envvar.BaseURL))
+	endpoint := endpoint.NewURLEndpoint(encoderBL, limiter)
 
 	router := httptransport.NewRouter(endpoint)
 
