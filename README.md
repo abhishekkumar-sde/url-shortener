@@ -1,34 +1,142 @@
 # URL Shortener
 
-A production-oriented URL shortener built with **Go**, **DynamoDB**, **Redis**, and Docker.
+A production-oriented URL shortener built with **Go**, **Redis**, **DynamoDB**, **HAProxy**, and Docker.
+
+The project is split into two stateless services:
+
+- **Encoder** — creates short URLs
+- **Decoder** — resolves short codes and redirects to the original URL
+- **HAProxy** — public entry point and load balancer
+- **Redis** — URL cache, distributed ID counter, and rate limiter
+- **DynamoDB** — durable URL storage
+
+---
 
 ## Architecture
 
 ```text
-Client
-  |
-  v
-Go HTTP Server
-  |
-  +---- Rate Limiter (Redis)
-  |
-  +---- URL Service
-          |
-          +---- Redis Cache
-          |
-          +---- DynamoDB
+                         Client
+                           |
+                           | HTTP
+                           v
+                    +--------------+
+                    |   HAProxy    |
+                    |    :10002    |
+                    +------+-------+
+                           |
+             +-------------+-------------+
+             |                           |
+       /api/v1/urls                 everything else
+             |                           |
+             v                           v
+       +-----------+               +-----------+
+       |  Encoder  |               |  Decoder  |
+       |   :8080   |               |   :8080   |
+       +-----+-----+               +-----+-----+
+             |                           |
+             |                           |
+             +-------------+-------------+
+                           |
+                    +------+------+
+                    |             |
+                    v             v
+                 Redis        DynamoDB
 ```
 
-### Components
+### Request routing
 
-- **Go** — HTTP API and business logic
-- **DynamoDB** — persistent URL storage
-- **Redis** — URL cache and distributed rate limiting
-- **Docker** — local runtime environment
+```text
+POST /api/v1/urls  -> Encoder
+GET  /{code}       -> Decoder
+```
 
-## API
+HAProxy also performs health checks against `/ping` on both backend services.
 
-### 1. Ping
+> Note: `/ping` through the public HAProxy endpoint is routed to the Decoder because the HAProxy frontend uses the Decoder as the default backend. HAProxy independently health-checks both Encoder and Decoder.
+
+---
+
+## Components
+
+### Go
+
+Provides:
+
+- HTTP API
+- Business logic
+- URL validation
+- short-code generation
+- expiry handling
+- redirect handling
+- error handling
+
+### Encoder
+
+Responsible for:
+
+1. Validate the long URL
+2. Validate `expires_in`
+3. Generate a distributed numeric ID using Redis `INCR`
+4. Convert the ID to Base62
+5. Store the URL in DynamoDB
+6. Populate Redis cache
+7. Return the short URL
+
+### Decoder
+
+Responsible for:
+
+1. Validate the short code
+2. Check Redis first
+3. On cache miss, read DynamoDB
+4. Validate URL expiry
+5. Populate Redis
+6. Return the original URL
+7. HTTP layer sends the redirect
+
+### Redis
+
+Redis has three roles:
+
+1. **URL cache**
+2. **Distributed ID generation**
+3. **Rate limiting**
+
+### DynamoDB
+
+DynamoDB is the durable source of truth for URL mappings.
+
+It stores:
+
+```text
+code
+long_url
+created_at
+expires_at
+```
+
+### HAProxy
+
+HAProxy is the public entry point.
+
+It:
+
+- routes Encoder traffic
+- routes Decoder traffic
+- performs backend health checks
+- forwards the original client IP using `X-Forwarded-For`
+
+---
+
+# API
+
+Base URL:
+
+```text
+http://localhost:10002
+```
+
+## 1. Ping
 
 ```http
 GET /ping
@@ -42,14 +150,18 @@ Response:
 }
 ```
 
-### 2. Create Short URL
+This endpoint is also used by HAProxy for backend health checks.
+
+---
+
+## 2. Create Short URL
 
 ```http
 POST /api/v1/urls
 Content-Type: application/json
 ```
 
-Request without expiry:
+### Without expiry
 
 ```json
 {
@@ -57,25 +169,27 @@ Request without expiry:
 }
 ```
 
-Request with expiry:
+### With expiry
 
 ```json
 {
-  "url": "https://www.linkedin.com/in/abhishekkumar-sde/",
+  "url": "https://www.google.com",
   "expires_in": 60
 }
 ```
 
-`expires_in` is the URL lifetime in **seconds**.
+`expires_in` is the URL lifetime in seconds.
 
-Examples:
+| Value | Meaning |
+|---:|---|
+| `0` | No expiry |
+| omitted | No expiry |
+| `60` | 1 minute |
+| `3600` | 1 hour |
+| `86400` | 1 day |
+| negative | Invalid request |
 
-- `60` = 1 minute
-- `3600` = 1 hour
-- `86400` = 1 day
-- `0` or omitted = no URL expiry
-
-Response:
+Example response:
 
 ```json
 {
@@ -85,11 +199,13 @@ Response:
 }
 ```
 
-For a URL without expiry, `expires_at` is `0`/omitted depending on JSON serialization.
+`expires_at` is omitted when the URL does not expire.
 
-The same long URL can be shortened multiple times. Each request generates a different short code.
+Each create request generates a new short code, even when the long URL is the same.
 
-### 3. Resolve Short URL
+---
+
+## 3. Resolve Short URL
 
 ```http
 GET /{code}
@@ -101,17 +217,25 @@ Example:
 GET /1
 ```
 
-A valid short URL responds with an HTTP **302 redirect** to the original URL.
+For a valid URL, the Decoder returns an HTTP `302` redirect to the original URL.
 
-If the code does not exist or the URL has expired:
+If the code does not exist:
 
 ```http
-HTTP 404
+404 Not Found
 ```
 
-## Resolve Flow
+If the URL has expired:
 
-Redis is the fast path for redirects.
+```http
+404 Not Found
+```
+
+---
+
+# Resolve Flow
+
+Redis is the fast path.
 
 ```text
 GET /{code}
@@ -121,66 +245,157 @@ GET /{code}
       |
    +--+--+
    |     |
- HIT   MISS
+  HIT   MISS
    |     |
-   v     v
-check  DynamoDB
-expiry    |
-   |      v
-   |   check expiry
-   |      |
-   |      v
-   |   populate Redis
-   |      |
-   +------+
+   |     v
+   |  DynamoDB
+   |     |
+   |     v
+   |  Check ExpiresAt
+   |     |
+   |     v
+   |  Populate Redis
+   |     |
+   +-----+
       |
       v
    Redirect
 ```
 
-Redis stores both the original URL and its expiry timestamp:
+## Redis cache design
 
-```json
-{
-  "long_url": "https://example.com",
-  "expires_at": 1780000000
-}
+Redis stores:
+
+```text
+key:
+url:<code>
+
+value:
+<long URL>
 ```
 
-This allows a cache hit to validate expiry without reading DynamoDB.
+For expiring URLs, the Redis key receives a TTL equal to the URL's remaining lifetime.
 
-DynamoDB remains the source of truth when Redis misses.
+For example:
 
-## Expiry
+```text
+DynamoDB:
+expires_at = 10:05:00
 
-Expiry is represented by `expires_at`, a Unix timestamp in seconds.
+Current time:
+10:04:20
 
-On URL creation:
+Redis TTL:
+40 seconds
+```
+
+This means Redis automatically removes the cached URL when its lifetime ends.
+
+DynamoDB remains the durable source of truth.
+
+The application still checks `expires_at` after a DynamoDB lookup because DynamoDB TTL cleanup is asynchronous.
+
+---
+
+# Short Code Generation
+
+The Encoder uses Redis `INCR` as a distributed atomic counter.
+
+```text
+Encoder 1 ─┐
+Encoder 2 ─┼──> Redis INCR
+Encoder 3 ─┘
+                |
+                v
+             1, 2, 3...
+```
+
+The numeric ID is converted to Base62:
+
+```text
+0-9
+A-Z
+a-z
+```
+
+Example:
+
+```text
+Redis ID -> Base62
+
+1  -> 1
+10 -> A
+36 -> a
+62 -> 10
+```
+
+DynamoDB also uses a conditional write:
+
+```text
+attribute_not_exists(code)
+```
+
+so an existing short code cannot be overwritten.
+
+---
+
+# Expiry
+
+For an expiring URL:
 
 ```text
 expires_at = current_time + expires_in
 ```
 
-The expiry timestamp is:
+`expires_at` is:
 
 - stored in DynamoDB
-- stored in the Redis cache
 - returned in the create response
+- used to calculate the Redis TTL
 
-Redis uses the URL's remaining lifetime as its cache TTL.
+A request with:
 
-DynamoDB TTL is enabled on the `expires_at` attribute. DynamoDB TTL cleanup is asynchronous, so the application still checks `expires_at` before redirecting.
+```json
+{
+  "expires_in": -1
+}
+```
 
-## Storage
+returns:
+
+```http
+400 Bad Request
+```
+
+because negative expiry is invalid.
+
+A URL with:
+
+```json
+{
+  "expires_in": 0
+}
+```
+
+does not expire.
+
+---
+
+# Storage
 
 DynamoDB table:
 
 ```text
-Partition key: code (String)
-TTL attribute: expires_at
+Table: URLMappings
+
+Partition key:
+code (String)
+
+TTL attribute:
+expires_at
 ```
 
-Example item:
+Example:
 
 ```json
 {
@@ -191,11 +406,13 @@ Example item:
 }
 ```
 
-`expires_at` is not part of the key schema; it is only the TTL attribute.
+`expires_at` is not part of the primary key. It is used as the DynamoDB TTL attribute.
 
-## Rate Limiting
+---
 
-Redis is also used for API rate limiting.
+# Rate Limiting
+
+Redis is used for API rate limiting.
 
 Current limits:
 
@@ -207,8 +424,10 @@ Current limits:
 When the limit is exceeded:
 
 ```http
-HTTP 429
+429 Too Many Requests
 ```
+
+Response:
 
 ```json
 {
@@ -216,12 +435,22 @@ HTTP 429
 }
 ```
 
-## Error Responses
-
-### Invalid URL
+Because the application is behind HAProxy, HAProxy forwards the original client IP using:
 
 ```http
-HTTP 400
+X-Forwarded-For
+```
+
+The Go service uses this value when determining the rate-limit identity.
+
+---
+
+# Error Responses
+
+## Invalid URL
+
+```http
+400 Bad Request
 ```
 
 ```json
@@ -230,10 +459,22 @@ HTTP 400
 }
 ```
 
-### URL Not Found / Expired
+## Invalid expiry
 
 ```http
-HTTP 404
+400 Bad Request
+```
+
+```json
+{
+  "error": "invalid expiry"
+}
+```
+
+## URL not found / expired
+
+```http
+404 Not Found
 ```
 
 ```json
@@ -242,10 +483,10 @@ HTTP 404
 }
 ```
 
-### Rate Limited
+## Rate limited
 
 ```http
-HTTP 429
+429 Too Many Requests
 ```
 
 ```json
@@ -254,65 +495,161 @@ HTTP 429
 }
 ```
 
-## Running Locally
+---
 
-### Prerequisites
+# Running Locally
+
+## Prerequisites
 
 - Docker
 - Go
 - Postman (optional)
 
-Create a Docker network:
-
-```bash
-docker network create urlshortener-network
-```
-
-### Start Redis
-
-```bash
-docker run -d   --name urlshortener-redis   --network urlshortener-network   -p 10000:6379   redis:7-alpine
-```
-
-### Start DynamoDB Local
-
-```bash
-docker run -d   --name urlshortener-dynamodb   --network urlshortener-network   -p 10001:8000   amazon/dynamodb-local
-```
-
-### Build the Server
+The recommended way to start the complete stack is the provided script.
 
 From the repository root:
 
 ```bash
-docker build -f buildscripts/build/Dockerfile -t url-shortener:latest .
+./buildscripts/runall.sh
 ```
 
-### Run the Server
+The script starts:
 
-```bash
-docker run -d   --name urlshortener-server   --network urlshortener-network   -p 10002:8080   -e REDIS_HOST=urlshortener-redis   -e REDIS_PORT=6379   -e DYNAMODB_HOST=urlshortener-dynamodb   -e DYNAMODB_PORT=8000   url-shortener:latest
+```text
+1. Docker network
+2. Redis
+3. DynamoDB Local
+4. Encoder
+5. Decoder
+6. HAProxy
 ```
 
-The API is available at:
+The public API is:
 
 ```text
 http://localhost:10002
 ```
 
-### Important Docker Networking Note
-
-From inside the Go container, use container ports:
+Redis is exposed locally on:
 
 ```text
-Redis      -> urlshortener-redis:6379
-DynamoDB   -> urlshortener-dynamodb:8000
-Server     -> 0.0.0.0:8080
+localhost:10000
 ```
 
-The host ports `10000`, `10001`, and `10002` are for access from your machine.
+DynamoDB Local is exposed locally on:
 
-## Testing
+```text
+localhost:10001
+```
+
+HAProxy is exposed locally on:
+
+```text
+localhost:10002
+```
+
+Encoder and Decoder are intentionally not exposed directly to the host. HAProxy communicates with them through the Docker network.
+
+---
+
+# Docker Architecture
+
+The project uses a single Dockerfile:
+
+```text
+buildscripts/build/Dockerfile
+```
+
+The service to build is selected using:
+
+```text
+SERVICE=encoder
+```
+
+or:
+
+```text
+SERVICE=decoder
+```
+
+Encoder image:
+
+```text
+urlshortener-encoder:latest
+```
+
+Decoder image:
+
+```text
+urlshortener-decoder:latest
+```
+
+The Dockerfile builds the selected service using:
+
+```bash
+go build ./${SERVICE}/cmd/restserver
+```
+
+---
+
+# Useful Docker Commands
+
+List containers:
+
+```bash
+docker ps
+```
+
+View all URL Shortener containers:
+
+```bash
+docker ps --filter "name=urlshortener"
+```
+
+View Encoder logs:
+
+```bash
+docker logs urlshortener-encoder
+```
+
+View Decoder logs:
+
+```bash
+docker logs urlshortener-decoder
+```
+
+View HAProxy logs:
+
+```bash
+docker logs urlshortener-haproxy
+```
+
+View Redis logs:
+
+```bash
+docker logs urlshortener-redis
+```
+
+View DynamoDB logs:
+
+```bash
+docker logs urlshortener-dynamodb
+```
+
+Stop the stack:
+
+```bash
+docker rm -f \
+  urlshortener-haproxy \
+  urlshortener-encoder \
+  urlshortener-decoder \
+  urlshortener-redis \
+  urlshortener-dynamodb
+```
+
+---
+
+# Testing
 
 Run unit tests:
 
@@ -326,87 +663,137 @@ Run with the race detector:
 go test -race ./...
 ```
 
-Build locally:
+Run static analysis:
+
+```bash
+go vet ./...
+```
+
+Build all Go packages:
 
 ```bash
 go build ./...
 ```
 
-## Project Structure
+---
+
+# Project Structure
 
 ```text
 urlshortner/
 ├── encoder/
-│   ├── bl/                  # Business logic
-│   ├── cmd/restserver/      # Server entry point
-│   ├── dl/                  # DynamoDB data layer
-│   ├── endpoint/            # Endpoint/business orchestration
-│   ├── inithandler/         # DynamoDB initialization and TTL
-│   ├── model/               # Request/response/domain models
-│   ├── svcerror/            # Service errors
-│   ├── svcparam/            # Service constants/config
-│   └── transport/http/      # HTTP handlers/router
+│   ├── bl/                  # Encoder business logic
+│   ├── cmd/restserver/      # Encoder server entry point
+│   ├── dl/                  # Encoder DynamoDB data layer
+│   ├── endpoint/            # Encoder endpoint layer
+│   ├── inithandler/         # DynamoDB initialization / TTL
+│   ├── model/               # Encoder request/response models
+│   ├── svcerror/            # Encoder service errors
+│   ├── svcparam/            # Encoder configuration
+│   └── transport/http/      # Encoder HTTP layer
+│
+├── decoder/
+│   ├── bl/                  # Decoder business logic
+│   ├── cmd/restserver/      # Decoder server entry point
+│   ├── dl/                  # Decoder DynamoDB data layer
+│   ├── endpoint/            # Decoder endpoint layer
+│   ├── inithandler/         # DynamoDB initialization / TTL
+│   ├── model/               # Decoder models
+│   ├── svcerror/            # Decoder service errors
+│   ├── svcparam/            # Decoder configuration
+│   └── transport/http/      # Decoder HTTP layer
+│
 ├── pkg/
 │   ├── ratelimiter/         # Redis-backed rate limiter
-│   └── redis/               # Redis cache
+│   └── redis/               # Redis client/cache and ID generator
+│
 ├── buildscripts/
-│   └── build/               # Docker build configuration
+│   ├── build/Dockerfile
+│   ├── decoder/run_decoder.sh
+│   ├── dynamodb/run_dynamodb.sh
+│   ├── encoder/run_encoder.sh
+│   ├── haproxy/haproxy.cfg
+│   ├── haproxy/run_loadbalancer.sh
+│   ├── redis/run_redis.sh
+│   ├── default_env.sh
+│   └── runall.sh
+│
 ├── URL-Shortener.postman_collection.json
 ├── go.mod
+├── go.sum
 └── README.md
 ```
 
-## Design Notes
+---
 
-### Short Code Generation
+# Design Notes
 
-The current implementation uses a process-local atomic counter encoded using Base62.
+## Why separate Encoder and Decoder?
 
-Base62 uses:
-
-```text
-0-9
-A-Z
-a-z
-```
-
-This produces compact short codes.
-
-DynamoDB uses:
+The read and write paths have different scaling characteristics.
 
 ```text
-attribute_not_exists(code)
+Write:
+Client -> HAProxy -> Encoder -> DynamoDB + Redis
+
+Read:
+Client -> HAProxy -> Decoder -> Redis
+                              |
+                              v
+                           DynamoDB
 ```
 
-as a conditional write, preventing an existing code from being overwritten.
+The Decoder can be scaled independently because URL resolution is expected to be much more frequent than URL creation.
 
-For a multi-instance production deployment, a process-local counter is not globally coordinated. A production design could use random Base62 IDs, a distributed ID generator, or a Redis-backed atomic counter depending on the requirements.
+## Why Redis?
 
-### Why Redis?
+Redis provides:
 
-Redis serves two purposes:
+- fast URL lookup
+- distributed atomic ID generation
+- rate limiting
 
-1. URL cache for fast redirects
-2. Rate limiting
+## Why DynamoDB?
 
-The redirect path is optimized as:
+DynamoDB provides durable URL storage and supports:
 
-```text
-Redis HIT -> no DynamoDB read
-Redis MISS -> DynamoDB -> Redis
-```
+- conditional writes
+- partition-key lookups
+- TTL configuration
+- horizontal scaling
 
-### Why DynamoDB?
+## Why HAProxy?
 
-DynamoDB provides durable storage for the URL mapping:
+HAProxy provides:
 
-```text
-short code -> long URL + metadata
-```
+- one public API endpoint
+- request routing
+- backend health checks
+- load balancing capability
+- client IP forwarding
 
-It also supports conditional writes and TTL configuration.
+---
 
-## Postman
+# Future Scaling Improvements
+
+The current implementation is intentionally simple enough for local development and interview practice.
+
+Potential next steps:
+
+1. Multiple Encoder replicas
+2. Multiple Decoder replicas
+3. HAProxy round-robin across replicas
+4. Redis HA / replication
+5. Atomic Redis rate limiter using Lua
+6. Cache stampede protection / request coalescing
+7. Metrics and distributed tracing
+8. Distributed ID-generation alternatives
+9. DynamoDB capacity and partition-key analysis
+10. Hot-key handling for extremely popular URLs
+
+---
+
+# Postman
 
 Import:
 
@@ -414,22 +801,27 @@ Import:
 URL-Shortener.postman_collection.json
 ```
 
-The collection contains:
-
-- Ping
-- Create Short URL
-- Create Short URL with Expiry
-- Resolve Short URL
-- Invalid URL
-- Not Found
-
 The collection uses:
 
 ```text
 http://localhost:10002
 ```
 
-as the local API base URL.
+as the default API base URL.
+
+Requests included:
+
+- Ping
+- Create Short URL
+- Create Short URL with Expiry
+- Resolve Short URL
+- Invalid URL
+- Invalid Expiry
+- Not Found
+
+The create request automatically saves the returned `code` into the collection's `short_code` variable, so the Resolve request can be run immediately after creating a URL.
+
+---
 
 ## License
 

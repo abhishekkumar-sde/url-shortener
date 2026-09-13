@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "url-shortener-collection",
+    "_postman_id": "9d2b7a41-4c53-4a8a-bb77-urlshortener",
     "name": "URL-Shortener",
     "description": "Postman collection for the Go URL Shortener API.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -12,84 +12,269 @@
     },
     {
       "key": "short_code",
-      "value": "1"
+      "value": ""
     }
   ],
   "item": [
     {
-      "name": "Ping",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{base_url}}/ping"
-      }
-    },
-    {
-      "name": "Create Short URL",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+      "name": "Health",
+      "item": [
+        {
+          "name": "Ping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/ping",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "ping"
+              ]
+            }
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"url\": \"https://www.google.com\"\n}"
-        },
-        "url": "{{base_url}}/api/v1/urls"
-      }
+        }
+      ]
     },
     {
-      "name": "Create Short URL with Expiry",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+      "name": "Create URL",
+      "item": [
+        {
+          "name": "Create Short URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.code).to.be.a('string').and.not.empty;",
+                  "pm.expect(body.short_url).to.be.a('string').and.not.empty;",
+                  "",
+                  "pm.collectionVariables.set('short_code', body.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://www.google.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/urls",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            }
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"url\": \"https://www.linkedin.com/in/abhishekkumar-sde/\",\n  \"expires_in\": 60\n}"
         },
-        "url": "{{base_url}}/api/v1/urls"
-      }
-    },
-    {
-      "name": "Resolve Short URL",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{base_url}}/{{short_code}}"
-      }
-    },
-    {
-      "name": "Invalid URL",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+        {
+          "name": "Create Short URL with Expiry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.code).to.be.a('string').and.not.empty;",
+                  "pm.expect(body.expires_at).to.be.a('number');",
+                  "",
+                  "pm.collectionVariables.set('short_code', body.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://www.google.com\",\n  \"expires_in\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/urls",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            }
           }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"url\": \"not-a-url\"\n}"
-        },
-        "url": "{{base_url}}/api/v1/urls"
-      }
+        }
+      ]
     },
     {
-      "name": "Not Found",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{base_url}}/doesnotexist"
-      }
+      "name": "Resolve URL",
+      "item": [
+        {
+          "name": "Resolve Short URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{short_code}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{short_code}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Not Found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/doesnotexist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "doesnotexist"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Validation",
+      "item": [
+        {
+          "name": "Invalid URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"not-a-url\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/urls",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invalid Expiry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://www.google.com\",\n  \"expires_in\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/urls",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "urls"
+              ]
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -121,7 +121,29 @@ func (c *Client) EnsureTable(ctx context.Context) error {
 }
 
 func (c *Client) EnableTTL(ctx context.Context) error {
-	_, err := c.Client.UpdateTimeToLive(
+	output, err := c.Client.DescribeTimeToLive(
+		ctx,
+		&sdkdynamodb.DescribeTimeToLiveInput{
+			TableName: aws.String(c.Table),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"describe TTL for table %q: %w",
+			c.Table,
+			err,
+		)
+	}
+
+	// TTL is already enabled.
+	// Nothing to do.
+	if output.TimeToLiveDescription != nil &&
+		output.TimeToLiveDescription.TimeToLiveStatus == types.TimeToLiveStatusEnabled {
+		return nil
+	}
+
+	// TTL is not enabled, so enable it.
+	_, err = c.Client.UpdateTimeToLive(
 		ctx,
 		&sdkdynamodb.UpdateTimeToLiveInput{
 			TableName: aws.String(c.Table),
