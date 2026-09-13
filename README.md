@@ -12,6 +12,12 @@ The project is split into two stateless services:
 
 ---
 
+## High-Level Design
+
+The system is split into separate Encoder and Decoder services behind a load balancer.
+
+![URL Shortener HLD](./HLD.png)
+
 ## Architecture
 
 ```text
