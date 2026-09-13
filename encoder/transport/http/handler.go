@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	nethttp "net/http"
+	"strings"
 
 	"url-shortener/encoder/endpoint"
 	"url-shortener/encoder/model"
@@ -59,11 +61,16 @@ func (h *Handler) CreateURL(w nethttp.ResponseWriter, r *nethttp.Request) {
 	writeJSON(w, nethttp.StatusCreated, response)
 }
 
-func clientIP(r *nethttp.Request) string {
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
 		return host
 	}
+
 	return r.RemoteAddr
 }
 

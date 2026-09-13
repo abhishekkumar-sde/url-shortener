@@ -46,8 +46,11 @@ func (s *BL) Create(ctx context.Context, rawURL string, expiresIn int64) (model.
 		return model.CreateURLResponse{}, svcerror.ErrInvalidURL
 	}
 
-	var expiresAt int64
+	if expiresIn < 0 {
+		return model.CreateURLResponse{}, svcerror.ErrInvalidExpiry
+	}
 
+	var expiresAt int64
 	if expiresIn > 0 {
 		expiresAt = time.Now().Add(
 			time.Duration(expiresIn) * time.Second,

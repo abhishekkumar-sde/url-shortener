@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	nethttp "net/http"
 	"strings"
 
@@ -52,11 +53,16 @@ func (h *Handler) ResolveURL(w nethttp.ResponseWriter, r *nethttp.Request) {
 	nethttp.Redirect(w, r, longURL, nethttp.StatusFound)
 }
 
-func clientIP(r *nethttp.Request) string {
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
 		return host
 	}
+
 	return r.RemoteAddr
 }
 
