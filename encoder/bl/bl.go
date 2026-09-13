@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"url-shortener/encoder/model"
@@ -24,18 +23,23 @@ type URLCache interface {
 	Set(context.Context, string, string, time.Duration) error
 }
 
-type BL struct {
-	repository URLRepository
-	cache      URLCache
-	baseURL    string
-	counter    atomic.Uint64
+type IDGenerator interface {
+	NextID(context.Context) (uint64, error)
 }
 
-func NewEncoderBL(repository URLRepository, cache URLCache, baseURL string) *BL {
+type BL struct {
+	repository  URLRepository
+	cache       URLCache
+	idGenerator IDGenerator
+	baseURL     string
+}
+
+func NewEncoderBL(repository URLRepository, cache URLCache, idGenerator IDGenerator, baseURL string) *BL {
 	return &BL{
-		repository: repository,
-		cache:      cache,
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		repository:  repository,
+		cache:       cache,
+		idGenerator: idGenerator,
+		baseURL:     strings.TrimRight(baseURL, "/"),
 	}
 }
 
@@ -53,7 +57,12 @@ func (s *BL) Create(ctx context.Context, rawURL string, expiresIn int64) (model.
 	}
 
 	for i := 0; i < 10; i++ {
-		code := base62(s.counter.Add(1))
+		id, err := s.idGenerator.NextID(ctx)
+		if err != nil {
+			return model.CreateURLResponse{}, fmt.Errorf("generate ID: %w", err)
+		}
+
+		code := base62(id)
 
 		u := model.URL{
 			Code:      code,
@@ -62,7 +71,7 @@ func (s *BL) Create(ctx context.Context, rawURL string, expiresIn int64) (model.
 			ExpiresAt: expiresAt,
 		}
 
-		err := s.repository.Create(ctx, u)
+		err = s.repository.Create(ctx, u)
 
 		if errors.Is(err, svcerror.ErrConflict) {
 			continue
@@ -72,7 +81,6 @@ func (s *BL) Create(ctx context.Context, rawURL string, expiresIn int64) (model.
 			return model.CreateURLResponse{}, err
 		}
 
-		// Cache only if the URL has not already expired.
 		if expiresAt > 0 {
 			ttl := time.Until(time.Unix(expiresAt, 0))
 
@@ -80,7 +88,6 @@ func (s *BL) Create(ctx context.Context, rawURL string, expiresIn int64) (model.
 				_ = s.cache.Set(ctx, code, rawURL, ttl)
 			}
 		} else {
-			// No expiry -> use normal cache TTL.
 			_ = s.cache.Set(ctx, code, rawURL, 0)
 		}
 
@@ -101,7 +108,12 @@ func (s *BL) Resolve(ctx context.Context, code string) (string, error) {
 		return "", svcerror.ErrNotFound
 	}
 
-	// Check DynamoDB first for expiry information.
+	// Redis is the fast path.
+	if longURL, err := s.cache.Get(ctx, code); err == nil {
+		return longURL, nil
+	}
+
+	// Cache miss -> DynamoDB.
 	u, err := s.repository.Get(ctx, code)
 	if err != nil {
 		return "", err
@@ -112,12 +124,7 @@ func (s *BL) Resolve(ctx context.Context, code string) (string, error) {
 		return "", svcerror.ErrNotFound
 	}
 
-	// Try Redis cache.
-	if longURL, err := s.cache.Get(ctx, code); err == nil {
-		return longURL, nil
-	}
-
-	// Populate cache with remaining lifetime.
+	// Populate Redis with remaining lifetime.
 	if u.ExpiresAt > 0 {
 		ttl := time.Until(time.Unix(u.ExpiresAt, 0))
 
@@ -147,10 +154,12 @@ func base62(n uint64) string {
 
 	var buf [11]byte
 	i := len(buf)
+
 	for n > 0 {
 		i--
 		buf[i] = alphabet[n%62]
 		n /= 62
 	}
+
 	return string(buf[i:])
 }

@@ -49,11 +49,26 @@ func (f *fakeCache) Set(_ context.Context, code string, longURL string, _ time.D
 	return nil
 }
 
-func TestCreateAndResolve(t *testing.T) {
-	repo := &fakeRepo{urls: map[string]model.URL{}}
-	cache := &fakeCache{values: map[string]string{}}
+type fakeIDGenerator struct {
+	next uint64
+}
 
-	service := NewEncoderBL(repo, cache, "http://localhost:8080")
+func (f *fakeIDGenerator) NextID(_ context.Context) (uint64, error) {
+	f.next++
+	return f.next, nil
+}
+
+func newTestService() *BL {
+	return NewEncoderBL(
+		&fakeRepo{urls: map[string]model.URL{}},
+		&fakeCache{values: map[string]string{}},
+		&fakeIDGenerator{},
+		"http://localhost:8080",
+	)
+}
+
+func TestCreateAndResolve(t *testing.T) {
+	service := newTestService()
 
 	created, err := service.Create(context.Background(), "https://example.com", 0)
 	if err != nil {
@@ -79,11 +94,7 @@ func TestCreateAndResolve(t *testing.T) {
 }
 
 func TestRejectInvalidURL(t *testing.T) {
-	service := NewEncoderBL(
-		&fakeRepo{urls: map[string]model.URL{}},
-		&fakeCache{values: map[string]string{}},
-		"http://localhost:8080",
-	)
+	service := newTestService()
 
 	_, err := service.Create(context.Background(), "not-a-url", 0)
 	if err != svcerror.ErrInvalidURL {
@@ -92,10 +103,7 @@ func TestRejectInvalidURL(t *testing.T) {
 }
 
 func TestCreateSameURLGeneratesDifferentCodes(t *testing.T) {
-	repo := &fakeRepo{urls: map[string]model.URL{}}
-	cache := &fakeCache{values: map[string]string{}}
-
-	service := NewEncoderBL(repo, cache, "http://localhost:8080")
+	service := newTestService()
 
 	first, err := service.Create(context.Background(), "https://example.com", 0)
 	if err != nil {
@@ -131,10 +139,7 @@ func TestCreateSameURLGeneratesDifferentCodes(t *testing.T) {
 }
 
 func TestCreateWithExpiry(t *testing.T) {
-	repo := &fakeRepo{urls: map[string]model.URL{}}
-	cache := &fakeCache{values: map[string]string{}}
-
-	service := NewEncoderBL(repo, cache, "http://localhost:8080")
+	service := newTestService()
 
 	before := time.Now().Unix()
 
@@ -167,10 +172,7 @@ func TestCreateWithExpiry(t *testing.T) {
 }
 
 func TestCreateWithoutExpiry(t *testing.T) {
-	repo := &fakeRepo{urls: map[string]model.URL{}}
-	cache := &fakeCache{values: map[string]string{}}
-
-	service := NewEncoderBL(repo, cache, "http://localhost:8080")
+	service := newTestService()
 
 	created, err := service.Create(context.Background(), "https://example.com", 0)
 	if err != nil {
@@ -183,10 +185,7 @@ func TestCreateWithoutExpiry(t *testing.T) {
 }
 
 func TestResolveNotFound(t *testing.T) {
-	repo := &fakeRepo{urls: map[string]model.URL{}}
-	cache := &fakeCache{values: map[string]string{}}
-
-	service := NewEncoderBL(repo, cache, "http://localhost:8080")
+	service := newTestService()
 
 	_, err := service.Resolve(context.Background(), "doesnotexist")
 	if err != svcerror.ErrNotFound {
