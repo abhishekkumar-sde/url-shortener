@@ -52,6 +52,8 @@ func (h *Handler) CreateURL(w nethttp.ResponseWriter, r *nethttp.Request) {
 			writeError(w, nethttp.StatusTooManyRequests, err.Error())
 		case errors.Is(err, svcerror.ErrInvalidURL):
 			writeError(w, nethttp.StatusBadRequest, err.Error())
+		case errors.Is(err, svcerror.ErrInvalidExpiry):
+			writeError(w, nethttp.StatusBadRequest, err.Error())
 		default:
 			writeError(w, nethttp.StatusInternalServerError, "could not create short URL")
 		}
