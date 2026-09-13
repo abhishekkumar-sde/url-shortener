@@ -15,11 +15,9 @@ import (
 
 type URLRepository interface {
 	Create(context.Context, model.URL) error
-	Get(context.Context, string) (model.URL, error)
 }
 
 type URLCache interface {
-	Get(context.Context, string) (string, error)
 	Set(context.Context, string, string, time.Duration) error
 }
 
@@ -99,43 +97,6 @@ func (s *BL) Create(ctx context.Context, rawURL string, expiresIn int64) (model.
 	}
 
 	return model.CreateURLResponse{}, fmt.Errorf("unable to generate unique code")
-}
-
-func (s *BL) Resolve(ctx context.Context, code string) (string, error) {
-	code = strings.TrimSpace(code)
-
-	if code == "" || strings.ContainsAny(code, "/?# ") {
-		return "", svcerror.ErrNotFound
-	}
-
-	// Redis is the fast path.
-	if longURL, err := s.cache.Get(ctx, code); err == nil {
-		return longURL, nil
-	}
-
-	// Cache miss -> DynamoDB.
-	u, err := s.repository.Get(ctx, code)
-	if err != nil {
-		return "", err
-	}
-
-	// URL has expired.
-	if u.ExpiresAt > 0 && time.Now().Unix() >= u.ExpiresAt {
-		return "", svcerror.ErrNotFound
-	}
-
-	// Populate Redis with remaining lifetime.
-	if u.ExpiresAt > 0 {
-		ttl := time.Until(time.Unix(u.ExpiresAt, 0))
-
-		if ttl > 0 {
-			_ = s.cache.Set(ctx, code, u.LongURL, ttl)
-		}
-	} else {
-		_ = s.cache.Set(ctx, code, u.LongURL, 0)
-	}
-
-	return u.LongURL, nil
 }
 
 func isValidURL(raw string) bool {

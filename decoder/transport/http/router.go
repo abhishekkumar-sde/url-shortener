@@ -3,7 +3,7 @@ package http
 import (
 	"net/http"
 
-	"url-shortener/encoder/endpoint"
+	"url-shortener/decoder/endpoint"
 )
 
 func NewRouter(endpoint *endpoint.URLEndpoint) http.Handler {
@@ -12,7 +12,7 @@ func NewRouter(endpoint *endpoint.URLEndpoint) http.Handler {
 	h := NewHandler(endpoint)
 
 	mux.HandleFunc("/ping", h.Ping)
-	mux.HandleFunc("/api/v1/urls", h.CreateURL)
+	mux.HandleFunc("/", h.ResolveURL)
 
 	return LoggingMiddleware(mux)
 }

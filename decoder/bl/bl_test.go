@@ -2,23 +2,24 @@ package bl
 
 import (
 	"context"
+	"testing"
 	"time"
 
-	"url-shortener/encoder/model"
-	"url-shortener/encoder/svcerror"
+	"url-shortener/decoder/model"
+	"url-shortener/decoder/svcerror"
 )
 
 type fakeRepo struct {
 	urls map[string]model.URL
 }
 
-func (f *fakeRepo) Create(_ context.Context, u model.URL) error {
-	if _, exists := f.urls[u.Code]; exists {
-		return svcerror.ErrConflict
+func (f *fakeRepo) Get(_ context.Context, code string) (model.URL, error) {
+	u, ok := f.urls[code]
+	if !ok {
+		return model.URL{}, svcerror.ErrNotFound
 	}
 
-	f.urls[u.Code] = u
-	return nil
+	return u, nil
 }
 
 type fakeCache struct {
@@ -39,20 +40,19 @@ func (f *fakeCache) Set(_ context.Context, code string, longURL string, _ time.D
 	return nil
 }
 
-type fakeIDGenerator struct {
-	next uint64
-}
-
-func (f *fakeIDGenerator) NextID(_ context.Context) (uint64, error) {
-	f.next++
-	return f.next, nil
-}
-
 func newTestService() *BL {
-	return NewEncoderBL(
+	return NewDecoderBL(
 		&fakeRepo{urls: map[string]model.URL{}},
 		&fakeCache{values: map[string]string{}},
-		&fakeIDGenerator{},
 		"http://localhost:8080",
 	)
+}
+
+func TestResolveNotFound(t *testing.T) {
+	service := newTestService()
+
+	_, err := service.Resolve(context.Background(), "doesnotexist")
+	if err != svcerror.ErrNotFound {
+		t.Fatalf("Resolve() error = %v, want ErrNotFound", err)
+	}
 }

@@ -16,7 +16,7 @@ echo "======================================"
 # --------------------------------------------------
 
 echo ""
-echo "[1/4] Setting up Docker network..."
+echo "[1/6] Setting up Docker network..."
 
 if docker network inspect "$DOCKER_NETWORK" >/dev/null 2>&1; then
     echo "Docker network already exists: $DOCKER_NETWORK"
@@ -30,7 +30,7 @@ fi
 # --------------------------------------------------
 
 echo ""
-echo "[2/4] Setting up Redis..."
+echo "[2/6] Setting up Redis..."
 
 "$SCRIPT_DIR/redis/run_redis.sh"
 
@@ -39,7 +39,7 @@ echo "[2/4] Setting up Redis..."
 # --------------------------------------------------
 
 echo ""
-echo "[3/4] Setting up DynamoDB..."
+echo "[3/6] Setting up DynamoDB..."
 
 "$SCRIPT_DIR/dynamodb/run_dynamodb.sh"
 
@@ -48,9 +48,35 @@ echo "[3/4] Setting up DynamoDB..."
 # --------------------------------------------------
 
 echo ""
-echo "[4/4] Setting up URL Shortener server..."
+echo "[4/6] Setting up URL Shortener Encoder server..."
 
-"$SCRIPT_DIR/server/run_server.sh"
+"$SCRIPT_DIR/encoder/run_encoder.sh"
+
+# --------------------------------------------------
+# Done
+# --------------------------------------------------
+
+# --------------------------------------------------
+# 5. Setup URL Shortener server
+# --------------------------------------------------
+
+echo ""
+echo "[5/6] Setting up URL Shortener Decoder server..."
+
+"$SCRIPT_DIR/decoder/run_decoder.sh"
+
+# --------------------------------------------------
+# Done
+# --------------------------------------------------
+
+# --------------------------------------------------
+# 6. Setup Load Balancer server
+# --------------------------------------------------
+
+echo ""
+echo "[6/6] Setting up URL Shortener server..."
+
+"$SCRIPT_DIR/haproxy/run_loadbalancer.sh"
 
 # --------------------------------------------------
 # Done
@@ -61,7 +87,7 @@ echo "======================================"
 echo "URL Shortener stack started"
 echo "======================================"
 echo ""
-echo "API       : http://localhost:${SERVER_EXPOSED_PORT}"
+echo "API       : http://localhost:${LOADBALANCER_EXPOSED_PORT}"
 echo "Redis     : localhost:${REDIS_EXPOSED_PORT}"
 echo "DynamoDB  : localhost:${DYNAMODB_EXPOSED_PORT}"
 echo ""

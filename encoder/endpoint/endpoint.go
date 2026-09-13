@@ -35,15 +35,3 @@ func (e *URLEndpoint) Create(ctx context.Context, clientIP string, req model.Cre
 
 	return e.encoderBL.Create(ctx, req.URL, req.ExpiresIn)
 }
-
-func (e *URLEndpoint) Resolve(ctx context.Context, clientIP, code string) (string, error) {
-	allowed, err := e.limiter.Allow(ctx, clientIP, "resolve", 300, time.Minute)
-	if err != nil {
-		return "", err
-	}
-	if !allowed {
-		return "", svcerror.ErrRateLimited
-	}
-
-	return e.encoderBL.Resolve(ctx, code)
-}

@@ -14,60 +14,60 @@ DOCKERFILE="$PROJECT_ROOT/buildscripts/build/Dockerfile"
 source "$PROJECT_ROOT/buildscripts/default_env.sh"
 
 echo "======================================"
-echo "Starting URL Shortener"
+echo "Starting URL Encoder Server"
 echo "======================================"
 
 echo "Project Root : $PROJECT_ROOT"
 echo "Dockerfile   : $DOCKERFILE"
 
 # --------------------------------------------------
-# Remove existing server container
+# Remove existing encoder container
 # --------------------------------------------------
 
 echo ""
-echo "Removing existing server container..."
+echo "Removing existing encoder container..."
 
-docker rm -f "$SERVER_CONTAINER_NAME" 2>/dev/null || true
+docker rm -f "$ENCODER_CONTAINER_NAME" 2>/dev/null || true
 
 # --------------------------------------------------
 # Build Docker image
 # --------------------------------------------------
 
 echo ""
-echo "Building URL Shortener image..."
+echo "Building URL Encoder Server image..."
 
 docker build \
+    --build-arg SERVICE=encoder \
     -f "$DOCKERFILE" \
-    -t "${CONTAINER_NAME}:latest" \
+    -t "${CONTAINER_NAME}-encoder:latest" \
     "$PROJECT_ROOT"
 
 # --------------------------------------------------
-# Start server
+# Start encoder
 # --------------------------------------------------
 
 echo ""
-echo "Starting URL Shortener server..."
+echo "Starting URL Encoder server..."
 
 docker run -d \
-    --name "$SERVER_CONTAINER_NAME" \
+    --name "$ENCODER_CONTAINER_NAME" \
     --network "$DOCKER_NETWORK" \
-    -p "$SERVER_EXPOSED_PORT:$SERVER_PORT" \
-    -e HTTP_PORT=8080 \
+    -e HTTP_PORT="$ENCODER_PORT" \
     -e REDIS_HOST="${REDIS_CONTAINER_NAME}" \
     -e REDIS_PORT="${REDIS_PORT}" \
     -e DYNAMODB_HOST="${DYNAMODB_CONTAINER_NAME}" \
     -e DYNAMODB_PORT="${DYNAMODB_PORT}" \
     -e DYNAMODB_REGION="local" \
     -e DYNAMODB_TABLE="URLMappings" \
-    -e BASE_URL="http://localhost:${SERVER_EXPOSED_PORT}" \
+    -e BASE_URL="http://localhost:${LOADBALANCER_EXPOSED_PORT}" \
     -e AWS_ACCESS_KEY_ID="local" \
     -e AWS_SECRET_ACCESS_KEY="local" \
-    "${CONTAINER_NAME}:latest"
+    "${CONTAINER_NAME}-encoder:latest"
 
 echo ""
 echo "======================================"
-echo "URL Shortener started"
+echo "URL Encoder started"
 echo "======================================"
-echo "Container : $SERVER_CONTAINER_NAME"
-echo "API       : http://localhost:$SERVER_EXPOSED_PORT"
+echo "Container : $ENCODER_CONTAINER_NAME"
+echo "Port      : $ENCODER_PORT"
 echo "======================================"

@@ -5,10 +5,11 @@ import (
 	"errors"
 	"net"
 	nethttp "net/http"
+	"strings"
 
-	"url-shortener/encoder/endpoint"
-	"url-shortener/encoder/model"
-	"url-shortener/encoder/svcerror"
+	"url-shortener/decoder/endpoint"
+	"url-shortener/decoder/model"
+	"url-shortener/decoder/svcerror"
 )
 
 type Handler struct {
@@ -28,35 +29,27 @@ func (h *Handler) Ping(w nethttp.ResponseWriter, r *nethttp.Request) {
 	writeJSON(w, nethttp.StatusOK, map[string]string{"message": "pong"})
 }
 
-func (h *Handler) CreateURL(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if r.Method != nethttp.MethodPost {
+func (h *Handler) ResolveURL(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if r.Method != nethttp.MethodGet {
 		writeError(w, nethttp.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	var req model.CreateURLRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&req); err != nil {
-		writeError(w, nethttp.StatusBadRequest, "invalid JSON body")
-		return
-	}
-
-	response, err := h.endpoint.Create(r.Context(), clientIP(r), req)
+	code := strings.TrimPrefix(r.URL.Path, "/")
+	longURL, err := h.endpoint.Resolve(r.Context(), clientIP(r), code)
 	if err != nil {
 		switch {
 		case errors.Is(err, svcerror.ErrRateLimited):
 			writeError(w, nethttp.StatusTooManyRequests, err.Error())
-		case errors.Is(err, svcerror.ErrInvalidURL):
-			writeError(w, nethttp.StatusBadRequest, err.Error())
+		case errors.Is(err, svcerror.ErrNotFound):
+			writeError(w, nethttp.StatusNotFound, "short URL not found")
 		default:
-			writeError(w, nethttp.StatusInternalServerError, "could not create short URL")
+			writeError(w, nethttp.StatusInternalServerError, "could not resolve short URL")
 		}
 		return
 	}
 
-	writeJSON(w, nethttp.StatusCreated, response)
+	nethttp.Redirect(w, r, longURL, nethttp.StatusFound)
 }
 
 func clientIP(r *nethttp.Request) string {

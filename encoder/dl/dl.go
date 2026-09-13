@@ -44,26 +44,3 @@ func (r *URLRepository) Create(ctx context.Context, u model.URL) error {
 
 	return nil
 }
-
-func (r *URLRepository) Get(ctx context.Context, code string) (model.URL, error) {
-	result, err := r.client.GetItem(ctx, &sdkdynamodb.GetItemInput{
-		TableName: aws.String(r.table),
-		Key: map[string]types.AttributeValue{
-			"code": &types.AttributeValueMemberS{Value: code},
-		},
-	})
-	if err != nil {
-		return model.URL{}, fmt.Errorf("get URL: %w", err)
-	}
-
-	if len(result.Item) == 0 {
-		return model.URL{}, svcerror.ErrNotFound
-	}
-
-	var u model.URL
-	if err := attributevalue.UnmarshalMap(result.Item, &u); err != nil {
-		return model.URL{}, fmt.Errorf("unmarshal URL: %w", err)
-	}
-
-	return u, nil
-}
